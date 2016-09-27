@@ -14,9 +14,18 @@ struct scion_priv {
 	struct mptcp_cb *mpcb;
 };
 
+#define MAX_PATH_LEN 256
+typedef uint8_t path[MAX_PATH_LEN];
+
 static int num_subflows __read_mostly = 2;
 module_param(num_subflows, int, 0644);
 MODULE_PARM_DESC(num_subflows, "choose the number of subflows per MPTCP connection");
+
+int get_paths(path **paths)
+{
+    //TODO: Talk to sciond to get paths
+    return 5;
+}
 
 /**
  * Create all new subflows, by doing calls to mptcp_initX_subsockets
@@ -33,6 +42,10 @@ static void create_subflow_worker(struct work_struct *work)
 	struct mptcp_cb *mpcb = pm_priv->mpcb;
 	struct sock *meta_sk = mpcb->meta_sk;
 	int iter = 0;
+    path *paths = NULL;
+    int num_paths = 0;
+
+    num_paths = get_paths(&paths);
 
 next_subflow:
 	if (iter) {
@@ -53,7 +66,8 @@ next_subflow:
 	    !tcp_sk(mpcb->master_sk)->mptcp->fully_established)
 		goto exit;
 
-	if (num_subflows > iter && num_subflows > mpcb->cnt_subflows) {
+	if (num_subflows > iter && num_subflows > mpcb->cnt_subflows &&
+            num_paths > iter && num_paths > mpcb->cnt_subflows) {
 		if (meta_sk->sk_family == AF_INET ||
 		    mptcp_v6_is_v4_mapped(meta_sk)) {
 			struct mptcp_loc4 loc;
@@ -84,6 +98,7 @@ next_subflow:
 			mptcp_init6_subsockets(meta_sk, &loc, &rem);
 #endif
 		}
+        //TODO: Add scion path to subsocket data structure here
 		goto next_subflow;
 	}
 
