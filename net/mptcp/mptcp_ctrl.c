@@ -67,7 +67,7 @@ int sysctl_mptcp_version __read_mostly = 0;
 static int min_mptcp_version;
 static int max_mptcp_version = 1;
 int sysctl_mptcp_checksum __read_mostly = 1;
-int sysctl_mptcp_debug __read_mostly;
+int sysctl_mptcp_debug __read_mostly = 1;
 EXPORT_SYMBOL(sysctl_mptcp_debug);
 int sysctl_mptcp_syn_retries __read_mostly = 3;
 
