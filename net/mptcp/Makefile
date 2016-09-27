@@ -15,6 +15,7 @@ obj-$(CONFIG_TCP_CONG_BALIA) += mptcp_balia.o
 obj-$(CONFIG_MPTCP_FULLMESH) += mptcp_fullmesh.o
 obj-$(CONFIG_MPTCP_NDIFFPORTS) += mptcp_ndiffports.o
 obj-$(CONFIG_MPTCP_BINDER) += mptcp_binder.o
+obj-$(CONFIG_MPTCP_SCION) += mptcp_scion.o
 obj-$(CONFIG_MPTCP_ROUNDROBIN) += mptcp_rr.o
 obj-$(CONFIG_MPTCP_REDUNDANT) += mptcp_redundant.o
 

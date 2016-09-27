@@ -39,6 +39,14 @@ config MPTCP_BINDER
 	  option to set the gateway (and/or path to) per each additional subflow
 	  via Loose Source Routing (IPv4 only).
 
+config MPTCP_SCION
+	tristate "MPTCP SCION"
+	depends on MPTCP=y
+	---help---
+	  This path-management module will create one subflow per SCION path,
+	  modifying the source-port. You can set the maximum number of subflows
+	  via the mptcp_scion-sysctl.
+
 choice
 	prompt "Default MPTCP Path-Manager"
 	default DEFAULT
@@ -54,6 +62,9 @@ choice
 	config DEFAULT_BINDER
 		bool "binder" if MPTCP_BINDER=y
 
+	config DEFAULT_SCION
+		bool "SCION" if MPTCP_SCION=y
+
 	config DEFAULT_DUMMY
 		bool "Default"
 
@@ -67,6 +78,7 @@ config DEFAULT_MPTCP_PM
 	default "fullmesh" if DEFAULT_FULLMESH 
 	default "ndiffports" if DEFAULT_NDIFFPORTS
 	default "binder" if DEFAULT_BINDER
+	default "scion" if DEFAULT_SCION
 	default "default"
 
 menuconfig MPTCP_SCHED_ADVANCED
