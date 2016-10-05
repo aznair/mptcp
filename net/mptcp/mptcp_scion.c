@@ -14,17 +14,64 @@ struct scion_priv {
 	struct mptcp_cb *mpcb;
 };
 
-#define MAX_PATH_LEN 256
-typedef uint8_t path[MAX_PATH_LEN];
-
 static int num_subflows __read_mostly = 2;
 module_param(num_subflows, int, 0644);
 MODULE_PARM_DESC(num_subflows, "choose the number of subflows per MPTCP connection");
 
-int get_paths(path **paths)
+#define MAX_NUM_PATHS 10
+#define MAX_PATH_LEN 256
+typedef uint8_t path[MAX_PATH_LEN];
+static path paths[MAX_NUM_PATHS];
+static int num_paths;
+
+#define MAX_DATA_LEN 2048
+
+static int paths_ready;
+
+static void handle_response(struct sk_buff *skb)
 {
-    //TODO: Talk to sciond to get paths
-    return 5;
+    struct nlmsghdr *nlh = NULL;
+    uint8_t *ptr = NULL;
+
+    if (paths_ready)
+        return;
+
+    nlh = (struct nlmsghdr *)skb->data;
+    ptr = (uint8_t *)NLMSG_DATA(nlh);
+
+    num_paths = 5;
+    paths_ready = 1;
+    wake_up_interruptible(&skb->sk->sk_wq->wait);
+}
+
+int get_paths(int isd, int as)
+{
+    struct sock *nl_sk = NULL;
+    struct sk_buff *skb = NULL;
+    struct nlmsghdr *nlh = NULL;
+    uint8_t *ptr;
+    struct netlink_kernel_cfg cfg = {
+        .input = handle_response,
+    };
+
+    paths_ready = 0;
+
+    /* setup and broadcast path request */
+    nl_sk = netlink_kernel_create(&init_net, NETLINK_SCION, &cfg);
+    skb = alloc_skb(NLMSG_SPACE(MAX_DATA_LEN), GFP_KERNEL);
+    nlh = (struct nlmsghdr *)skb->data;
+    nlh->nlmsg_len = NLMSG_SPACE(MAX_DATA_LEN);
+    nlh->nlmsg_pid = 0;
+    nlh->nlmsg_flags = 0;
+    ptr = (uint8_t *)NLMSG_DATA(nlh);
+    *ptr++ = 0;
+    *(uint32_t *)ptr = htonl((isd << 20) | as);
+    NETLINK_CB(skb).dst_group = 1;
+    netlink_broadcast(nl_sk, skb, 0, 1, GFP_KERNEL);
+
+    wait_event_interruptible(nl_sk->sk_wq->wait, paths_ready);
+
+    return num_paths;
 }
 
 /**
@@ -42,10 +89,9 @@ static void create_subflow_worker(struct work_struct *work)
 	struct mptcp_cb *mpcb = pm_priv->mpcb;
 	struct sock *meta_sk = mpcb->meta_sk;
 	int iter = 0;
-    path *paths = NULL;
-    int num_paths = 0;
 
-    num_paths = get_paths(&paths);
+    /* TODO: isd_as should be somewhere in struct sock */
+    get_paths(1, 13);
 
 next_subflow:
 	if (iter) {
