@@ -23,6 +23,7 @@ MODULE_PARM_DESC(num_subflows, "choose the number of subflows per MPTCP connecti
 typedef uint8_t path[MAX_PATH_LEN];
 static path paths[MAX_NUM_PATHS];
 static int num_paths;
+static struct sock *nl_sk = NULL;
 
 #define MAX_DATA_LEN 2048
 
@@ -39,6 +40,8 @@ static void handle_response(struct sk_buff *skb)
     nlh = (struct nlmsghdr *)skb->data;
     ptr = (uint8_t *)NLMSG_DATA(nlh);
 
+    printk(KERN_INFO "received %d byte response from sciond\n", nlh->nlmsg_len);
+
     num_paths = 5;
     paths_ready = 1;
     wake_up_interruptible(&skb->sk->sk_wq->wait);
@@ -46,23 +49,15 @@ static void handle_response(struct sk_buff *skb)
 
 int get_paths(int isd, int as)
 {
-    struct sock *nl_sk = NULL;
     struct sk_buff *skb = NULL;
     struct nlmsghdr *nlh = NULL;
     uint8_t *ptr;
-    struct netlink_kernel_cfg cfg = {
-        .input = handle_response,
-    };
 
     paths_ready = 0;
 
     /* setup and broadcast path request */
-    nl_sk = netlink_kernel_create(&init_net, NETLINK_SCION, &cfg);
-    skb = alloc_skb(NLMSG_SPACE(MAX_DATA_LEN), GFP_KERNEL);
-    nlh = (struct nlmsghdr *)skb->data;
-    nlh->nlmsg_len = NLMSG_SPACE(MAX_DATA_LEN);
-    nlh->nlmsg_pid = 0;
-    nlh->nlmsg_flags = 0;
+    skb = nlmsg_new(5, 0);
+    nlh = nlmsg_put(skb, 0, 0, NLMSG_DONE, 5, 0);
     ptr = (uint8_t *)NLMSG_DATA(nlh);
     *ptr++ = 0;
     *(uint32_t *)ptr = htonl((isd << 20) | as);
@@ -70,7 +65,7 @@ int get_paths(int isd, int as)
     netlink_broadcast(nl_sk, skb, 0, 1, GFP_KERNEL);
 
     wait_event_interruptible_timeout(nl_sk->sk_wq->wait, paths_ready, 5 * CLOCKS_PER_SEC);
-    netlink_kernel_release(nl_sk);
+    printk(KERN_INFO "done waiting for path response\n");
 
     return num_paths;
 }
@@ -202,7 +197,13 @@ static struct mptcp_pm_ops scion __read_mostly = {
 /* General initialization of MPTCP_PM */
 static int __init scion_register(void)
 {
+    struct netlink_kernel_cfg cfg = {
+        .input = handle_response,
+    };
+
 	BUILD_BUG_ON(sizeof(struct scion_priv) > MPTCP_PM_SIZE);
+
+    nl_sk = netlink_kernel_create(&init_net, NETLINK_SCION, &cfg);
 
 	if (mptcp_register_path_manager(&scion))
 		goto exit;
@@ -215,6 +216,7 @@ exit:
 
 static void scion_unregister(void)
 {
+    netlink_kernel_release(nl_sk);
 	mptcp_unregister_path_manager(&scion);
 }
 
