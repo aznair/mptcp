@@ -20,8 +20,12 @@ MODULE_PARM_DESC(num_subflows, "choose the number of subflows per MPTCP connecti
 
 #define MAX_NUM_PATHS 10
 #define MAX_PATH_LEN 256
-typedef uint8_t path[MAX_PATH_LEN];
-static path paths[MAX_NUM_PATHS];
+typedef struct {
+    uint8_t raw_path[MAX_PATH_LEN];
+    struct sockaddr_storage first_hop;
+    int mtu;
+} spath_t;
+static spath_t paths[MAX_NUM_PATHS];
 static int num_paths;
 static struct sock *nl_sk = NULL;
 
@@ -33,16 +37,67 @@ static void handle_response(struct sk_buff *skb)
 {
     struct nlmsghdr *nlh = NULL;
     uint8_t *ptr = NULL;
+    int len;
 
     if (paths_ready)
         return;
 
+    num_paths = 0;
+
     nlh = (struct nlmsghdr *)skb->data;
+    len = nlh->nlmsg_len - sizeof(struct nlmsghdr);
+    printk(KERN_INFO "received %d byte response from sciond\n", len);
     ptr = (uint8_t *)NLMSG_DATA(nlh);
 
-    printk(KERN_INFO "received %d byte response from sciond\n", nlh->nlmsg_len);
+    while (len > 0 && num_paths < MAX_NUM_PATHS) {
+        uint8_t path_len;
+        uint8_t addr_type;
+        /*
+         * buffer should be long enough for:
+         * path_len + path
+         * first_hop_type + first_hop_addr(16B max) + first_hop_port
+         * mtu
+         */
+        memset(&paths[num_paths], 0, sizeof(spath_t));
+        path_len = *ptr++;
+        if (len < 1 + path_len + 1 + 16 + 2 + 2)
+            break;
+        len--;
+        memcpy(paths[num_paths].raw_path, ptr, path_len);
+        ptr += path_len;
+        len -= path_len;
+        addr_type = *ptr++;
+        len--;
+        if (addr_type == 1) { /* IPv4 */
+            struct sockaddr_in *sin = (struct sockaddr_in *)&paths[num_paths].first_hop;
+            sin->sin_family = AF_INET;
+            memcpy(&sin->sin_addr, ptr, 4);
+            ptr += 4;
+            len -= 4;
+            sin->sin_port = *(uint16_t *)ptr;
+            ptr += 2;
+            len -= 2;
+            paths[num_paths].mtu = *(uint16_t *)ptr;
+            ptr += 2;
+            len -= 2;
+        } else if (addr_type == 2) { /* IPv6 */
+            struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&paths[num_paths].first_hop;
+            sin6->sin6_family = AF_INET6;
+            memcpy(&sin6->sin6_addr, ptr, 16);
+            ptr += 16;
+            len -= 16;
+            sin6->sin6_port = *(uint16_t *)ptr;
+            ptr += 2;
+            len -= 2;
+            paths[num_paths].mtu = *(uint16_t *)ptr;
+            ptr += 2;
+            len -= 2;
+        }
+        num_paths++;
+        printk(KERN_INFO "parsed a full path from sciond response\n");
+    }
 
-    num_paths = 5;
+    printk(KERN_INFO "total %d paths available\n", num_paths);
     paths_ready = 1;
     wake_up_interruptible(&skb->sk->sk_wq->wait);
 }
