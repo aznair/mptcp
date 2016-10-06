@@ -69,7 +69,8 @@ int get_paths(int isd, int as)
     NETLINK_CB(skb).dst_group = 1;
     netlink_broadcast(nl_sk, skb, 0, 1, GFP_KERNEL);
 
-    wait_event_interruptible(nl_sk->sk_wq->wait, paths_ready);
+    wait_event_interruptible_timeout(nl_sk->sk_wq->wait, paths_ready, 5 * CLOCKS_PER_SEC);
+    netlink_kernel_release(nl_sk);
 
     return num_paths;
 }
@@ -91,7 +92,9 @@ static void create_subflow_worker(struct work_struct *work)
 	int iter = 0;
 
     /* TODO: isd_as should be somewhere in struct sock */
+    mutex_lock(&mpcb->mpcb_mutex);
     get_paths(1, 13);
+    mutex_unlock(&mpcb->mpcb_mutex);
 
 next_subflow:
 	if (iter) {
